@@ -1,7 +1,10 @@
-target/
-*.class
-*.log
-.idea/
-.vscode/
-.DS_Store
-.env
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.tfstate
+*.tfstate.*
+.terraform/
+kubeconfig*
+application-prod.properties
