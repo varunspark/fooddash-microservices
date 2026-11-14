@@ -1,0 +1,104 @@
+# One command starts the whole system:  docker compose up --build
+#
+#   browser -> frontend (nginx) -> api-gateway -> restaurant-service -> restaurant-db
+#                                              \-> order-service ------> order-db
+#                                                       \-- calls restaurant-service directly
+#
+# Each service owns its own database. No service reads another service's tables.
+
+services:
+  restaurant-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: restaurants
+      POSTGRES_USER: fooddash
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fooddash}
+    volumes:
+      - restaurant-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fooddash -d restaurants"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  order-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: fooddash
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fooddash}
+    volumes:
+      - order-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fooddash -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  restaurant-service:
+    build: ./restaurant-service
+    depends_on:
+      restaurant-db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://restaurant-db:5432/restaurants
+      SPRING_DATASOURCE_USERNAME: fooddash
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-fooddash}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  order-service:
+    build: ./order-service
+    depends_on:
+      order-db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+      SPRING_DATASOURCE_USERNAME: fooddash
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-fooddash}
+      RESTAURANT_SERVICE_URL: http://restaurant-service:8081
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    depends_on:
+      restaurant-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    environment:
+      RESTAURANT_SERVICE_URL: http://restaurant-service:8081
+      ORDER_SERVICE_URL: http://order-service:8082
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
+volumes:
+  restaurant-data:
+  order-data:

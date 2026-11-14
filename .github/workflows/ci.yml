@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Each service is built and tested on its own, in parallel.
+  services:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [restaurant-service, order-service, api-gateway]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: ${{ matrix.service }}/pom.xml
+
+      - name: Build and test
+        run: mvn -B verify
+
+      - name: Build Docker image
+        run: docker build -t fooddash/${{ matrix.service }}:ci .
+
+  # Then the whole system is started and checked as one.
+  integration:
+    needs: services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the system
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Smoke test
+        run: ./scripts/smoke-test.sh
+
+      - name: Show logs if something failed
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Stop and clean up
+        if: always()
+        run: docker compose down -v

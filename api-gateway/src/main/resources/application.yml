@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # Order matters only when paths overlap; these two do not.
+        - id: restaurant-service
+          uri: ${RESTAURANT_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/restaurants/**
+        - id: order-service
+          uri: ${ORDER_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/orders/**
+        # Note: /api/menu-items/** is deliberately NOT routed.
+        # It is an internal endpoint used by the order service only.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
